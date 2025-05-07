@@ -8,7 +8,7 @@ import requests
 from PIL import Image
 import imagehash
 from huggingface_hub import hf_hub_download
-
+import tensorflow as tf
 
 # GPU/CPU configuration (same as before)
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
@@ -23,7 +23,7 @@ os.environ["TF_GPU_ALLOCATOR"] = "null"
 os.environ["TF_XLA_FLAGS"] = "--tf_xla_cpu_global_jit"
 os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "false"
 os.environ["MALLOC_ARENA_MAX"] = "2"
-import tensorflow as tf
+
 # Configure TensorFlow to use CPU only
 tf.config.set_visible_devices([], 'GPU')
 tf.config.optimizer.set_jit(False)
@@ -89,11 +89,10 @@ face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_fronta
 
 
 def FrameCapture(path):
-   
+  
     output_dir = os.path.join(settings.MEDIA_ROOT, 'frames')
-    frame_skip = 20  # Process every 20th frame to distribute sampling
+    frame_skip = 30
     min_face_size = 60
-    max_frames_to_save = 30  # Maximum number of frames to save
 
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
@@ -104,13 +103,12 @@ def FrameCapture(path):
 
     frame_count = 0
     saved_faces = 0
-    
-    while saved_faces < max_frames_to_save:  # Stop when we have enough frames
+
+    while True:
         ret, frame = cap.read()
         if not ret:
-            break  # End of video
+            break
 
-        # Only process frames at our skip interval
         if frame_count % frame_skip == 0:
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             faces = face_cascade.detectMultiScale(
@@ -120,25 +118,28 @@ def FrameCapture(path):
                 minSize=(min_face_size, min_face_size)
             )
 
-            # Save the first face found in this frame (if any)
             for i, (x, y, w, h) in enumerate(faces):
                 aspect_ratio = w / float(h)
-                if 0.75 <= aspect_ratio <= 1.33:  # Check for reasonable face proportions
-                    face = frame[y:y+h, x:x+w]
-                    brightness = face.mean()
-                    if brightness >= 40:  # Check for sufficient brightness
-                        filename = os.path.join(output_dir, f"face_{frame_count}.jpg")
-                        cv2.imwrite(filename, face)
-                        print(f"[✓] Saved {filename}")
-                        saved_faces += 1
-                        break  # Only save one face per frame
+                if aspect_ratio < 0.75 or aspect_ratio > 1.33:
+                    continue
+
+                face = frame[y:y+h, x:x+w]
+                brightness = face.mean()
+                if brightness < 40:
+                    continue
+
+                filename = os.path.join(output_dir, f"face_{frame_count}_{i}.jpg")
+                cv2.imwrite(filename, face)
+
+                print(f"[✓] Saved {filename}")
+                saved_faces += 1
 
         frame_count += 1
 
     cap.release()
-    print(f"\nDone: Saved {saved_faces} face crops (limited to {max_frames_to_save} frames).")
+    print(f"\nDone: {saved_faces} face crops saved.")
 
-    # Clean up any non-face or duplicate frames
+    # Optional: Remove non-face and duplicate frames
     remove_non_face_and_duplicate_frames(output_dir)
 
 
@@ -182,7 +183,7 @@ def get_confidence_label(confidence, prediction):
 
 
 def evaluate_frames(directory):
-   
+
     total_confidence = 0
     num_frames = 0
     results = []
@@ -243,7 +244,7 @@ def evaluate_frames(directory):
 
 
 def upload_video(request):
-  
+   
     media_dir = settings.MEDIA_ROOT
 
     # Check if the media directory exists
@@ -272,7 +273,7 @@ def upload_video(request):
             FrameCapture(video_full_path)
             frames_dir = os.path.join(settings.MEDIA_ROOT, 'frames')
             results, display_confidence, overall_prediction, real_count, fake_count, overall_label, fake_series, real_series, frame_labels, confidence_series = evaluate_frames(frames_dir)
-           
+          
             # Convert NumPy types to Python native types
             confidence_series = [float(val) for val in confidence_series]
             real_series = [float(val) for val in real_series]
