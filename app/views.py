@@ -53,15 +53,16 @@ tf.config.optimizer.set_jit(False)
 tf.config.threading.set_intra_op_parallelism_threads(1)
 tf.config.threading.set_inter_op_parallelism_threads(1)
 
-gpus = tf.config.list_physical_devices('GPU')
-if gpus:
-    try:
-        tf.config.experimental.set_virtual_device_configuration(
-            gpus[0],
-            [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=1024)]
-        )
-    except RuntimeError as e:
-        print(e)
+# Limit TensorFlow memory growth
+gpus = tf.config.experimental.list_physical_devices('GPU')
+for gpu in gpus:
+    tf.config.experimental.set_memory_growth(gpu, True)
+
+# Set TensorFlow to use a fixed memory limit (in MB) - adjust this based on Railway's limits
+tf.config.set_logical_device_configuration(
+    tf.config.list_physical_devices('CPU')[0],
+    [tf.config.LogicalDeviceConfiguration(memory_limit=512)]
+)
 
 from tensorflow.keras.preprocessing import image
 from tensorflow.keras.applications.xception import preprocess_input
@@ -86,9 +87,9 @@ model = None
 has_warned = False  # Flag to track if we've shown model loading warning
 
 # Railway-friendly constants
-MAX_FRAMES_TO_PROCESS = 10  # Now extracts exactly 10 frames
-FRAME_SKIP_RATE = 10        # Processes every 10th frame
-MAX_FACES_TO_EXTRACT = 5   # Optional: Increase if you want more faces# Skip more frames to reduce processing
+MAX_FRAMES_TO_PROCESS = 10  # Limit total processed frames
+MAX_FACES_TO_EXTRACT = 5   # Limit face extraction
+FRAME_SKIP_RATE = 45        # Skip more frames to reduce processing
 
 def initialize_model():
     """Download and load the model if needed"""
@@ -163,7 +164,7 @@ def check_faces_in_video(video_path):
     # Process frames at intervals to speed up checking
     frame_skip = FRAME_SKIP_RATE
     frame_count = 0
-    max_frames_to_check = 100  # Limit how many frames we check
+    max_frames_to_check = 200  # Limit how many frames we check
     
     frames_checked = 0
     
