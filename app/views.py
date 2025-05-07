@@ -163,7 +163,7 @@ def check_faces_in_video(video_path):
     # Process frames at intervals to speed up checking
     frame_skip = FRAME_SKIP_RATE
     frame_count = 0
-    max_frames_to_check = 30  # Limit how many frames we check
+    max_frames_to_check = 100  # Limit how many frames we check
     
     frames_checked = 0
     
