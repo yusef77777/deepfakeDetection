@@ -157,8 +157,6 @@ python-multipart==0.0.20
 python-socketio==5.11.2
 pytz==2024.1
 PyWavelets==1.6.0
-pywin32==306
-pywinpty==2.0.13
 PyYAML==6.0.1
 pyzmq==26.0.3
 referencing==0.35.1
