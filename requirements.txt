@@ -187,8 +187,6 @@ soupsieve==2.5
 sqlparse==0.5.2
 stack-data==0.6.3
 starlette==0.41.3
-streamlit==1.13.0
-streamlit_folium==0.20.0
 stringzilla==3.12.5
 sympy==1.12.1
 tbb==2021.12.0
