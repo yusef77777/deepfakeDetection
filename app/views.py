@@ -1,5 +1,6 @@
 import os
 import gc
+import psutil
 import json
 import cv2
 import numpy as np
@@ -58,6 +59,27 @@ model = load_model_from_hf()
 
 
 
+def clear_memory():
+    """Free up RAM by forcing garbage collection and trimming memory usage."""
+    gc.collect()  # Collect unreferenced objects
+
+    # On Linux, trim the memory of the current process
+    try:
+        if os.name == 'posix':
+            pid = os.getpid()
+            with open(f"/proc/{pid}/clear_refs", "w") as f:
+                f.write("1")
+    except Exception:
+        pass  # Fail silently if not allowed
+
+    # Try to reduce memory usage further
+    try:
+        process = psutil.Process(os.getpid())
+        process.memory_info()  # Just to ensure it's alive
+    except Exception:
+        pass
+
+
 def check_faces_in_video(video_path):
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -87,7 +109,7 @@ face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_fronta
 
 
 def FrameCapture(path):
-  
+    clear_memory()
     output_dir = os.path.join(settings.MEDIA_ROOT, 'frames')
     frame_skip = 45
     min_face_size = 60
@@ -138,11 +160,12 @@ def FrameCapture(path):
     print(f"\nDone: {saved_faces} face crops saved.")
 
     # Optional: Remove non-face and duplicate frames
+    
     remove_non_face_and_duplicate_frames(output_dir)
 
 
 def remove_non_face_and_duplicate_frames(directory):
-    
+    clear_memory()
     seen_hashes = set()
     files = os.listdir(directory)
 
@@ -174,6 +197,7 @@ def remove_non_face_and_duplicate_frames(directory):
 
 
 def get_confidence_label(confidence, prediction):
+    clear_memory()
     if prediction == "Real":
         return "Real ✅"
     else:
@@ -181,12 +205,11 @@ def get_confidence_label(confidence, prediction):
 
 
 def evaluate_frames(directory):
+    clear_memory()
 
     total_confidence = 0
     num_frames = 0
     results = []
-    fake_series = []
-    real_series = []
     frame_labels = []
     fake_count = 0
     real_count = 0
@@ -215,13 +238,11 @@ def evaluate_frames(directory):
             if confidence >= 0.5:
                 results.append((filename, "Fake", confidence))
                 fake_count += 1
-                fake_series.append(1)
-                real_series.append(0)
+               
             else:
                 results.append((filename, "Real", confidence))
                 real_count += 1
-                fake_series.append(0)
-                real_series.append(1)
+               
 
     if num_frames > 0:
         average_confidence = total_confidence / num_frames
@@ -235,7 +256,7 @@ def evaluate_frames(directory):
         overall_prediction = "No frames found."
         overall_label = "N/A"
 
-    return results, display_confidence, overall_prediction, real_count, fake_count, overall_label, fake_series, real_series, frame_labels, confidence_series
+    return results, display_confidence, overall_prediction, real_count, fake_count, overall_label,frame_labels, confidence_series
 
 
 
@@ -263,6 +284,7 @@ def upload_video(request):
 
             # Check if faces are detected in the video
             faces_detected = check_faces_in_video(video_full_path)
+            clear_memory()
             if not faces_detected:
                 # If no faces are detected, stop further processing and send message to frontend
                 return render(request, 'landing_page.html', {'form': form, 'error_message': 'No faces detected in the video.'})
@@ -270,12 +292,11 @@ def upload_video(request):
             # Proceed with further processing (frame capture, evaluation, etc.)
             FrameCapture(video_full_path)
             frames_dir = os.path.join(settings.MEDIA_ROOT, 'frames')
-            results, display_confidence, overall_prediction, real_count, fake_count, overall_label, fake_series, real_series, frame_labels, confidence_series = evaluate_frames(frames_dir)
+            
+            results, display_confidence, overall_prediction, real_count, fake_count, overall_label, frame_labels, confidence_series = evaluate_frames(frames_dir)
           
             # Convert NumPy types to Python native types
             confidence_series = [float(val) for val in confidence_series]
-            real_series = [float(val) for val in real_series]
-            fake_series = [float(val) for val in fake_series]
             frame_labels = [str(label) for label in frame_labels]
 
             return render(request, 'results.html', {
@@ -286,8 +307,6 @@ def upload_video(request):
                 'fake_count': fake_count,
                 'overall_label': overall_label,
                 'confidence_series': json.dumps(confidence_series),
-                'real_series': json.dumps(real_series),
-                'fake_series': json.dumps(fake_series),
                 'frame_labels': json.dumps(frame_labels),
             })
     else:
