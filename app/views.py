@@ -20,7 +20,7 @@ from django.views.decorators.http import require_POST
 from .models import Feedback
 from .forms import VideoUploadForm
 from .models import Email
-
+import requests
 
 
 def clear_gpu_memory():
@@ -31,11 +31,20 @@ clear_gpu_memory()
 
 
 
+# Define the URL where the model is hosted on GitHub
+model_url = 'https://github.com/uwdhuwhduwg/deepfakeDetection/releases/download/deepfake_model77/XSoftmax-.1st.high.P.h5'  # Replace with actual URL
 
+# Define the path where you want to store the model temporarily
+model_path = r"C:\Users\creat\Desktop\semesters\7th semester\deepfake_fyp1 - Copy\XSoftmax- 1st high P.h5"
+
+# Download the model from the URL if it doesn't already exist locally
+if not os.path.exists(model_path):
+    response = requests.get(model_url)
+    with open(model_path, 'wb') as f:
+        f.write(response.content)
 
 # Load the model once when the server starts
-model = tf.keras.models.load_model(r"C:\Users\creat\Desktop\semesters\7th semester\deepfake_fyp1\models\best models\XSoftmax- 1st high P.h5", compile=False)
-
+model = tf.keras.models.load_model(model_path, compile=False)
 
 
 
