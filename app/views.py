@@ -34,11 +34,13 @@ clear_gpu_memory()
 from huggingface_hub import hf_hub_download
 import tensorflow as tf
 
-model_path = hf_hub_download(
-    repo_id="abdulrehman77/deepfakedetection",
-    filename="XSoftmax-1st-highP.h5"
-)
+# Define the model URL from Hugging Face
+model_url = 'https://huggingface.co/abdulrehman77/deepfakedetection/resolve/main/XSoftmax-%201st%20high%20P.h5'
 
+# Download the model
+model_path = hf_hub_download(repo_id="abdulrehman77/deepfakedetection", filename="XSoftmax-1st-highP.h5")
+
+# Load the model
 model = tf.keras.models.load_model(model_path, compile=False)
 
 
