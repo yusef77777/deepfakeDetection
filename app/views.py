@@ -8,7 +8,7 @@ import requests
 from PIL import Image
 import imagehash
 from huggingface_hub import hf_hub_download
-import tensorflow as tf
+
 
 # GPU/CPU configuration (same as before)
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
@@ -23,7 +23,7 @@ os.environ["TF_GPU_ALLOCATOR"] = "null"
 os.environ["TF_XLA_FLAGS"] = "--tf_xla_cpu_global_jit"
 os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "false"
 os.environ["MALLOC_ARENA_MAX"] = "2"
-
+import tensorflow as tf
 # Configure TensorFlow to use CPU only
 tf.config.set_visible_devices([], 'GPU')
 tf.config.optimizer.set_jit(False)
@@ -43,8 +43,6 @@ from .forms import VideoUploadForm
 
 FACE_CASCADE = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
 
-
-gc.collect()
 
 # Load the model from Hugging Face Hub
 def load_model_from_hf():
@@ -91,7 +89,7 @@ face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_fronta
 def FrameCapture(path):
   
     output_dir = os.path.join(settings.MEDIA_ROOT, 'frames')
-    frame_skip = 50
+    frame_skip = 45
     min_face_size = 60
 
     cap = cv2.VideoCapture(path)
@@ -200,7 +198,7 @@ def evaluate_frames(directory):
     for idx, filename in enumerate(sorted(os.listdir(directory))):
         if filename.endswith((".jpg", ".png")):
             img_path = os.path.join(directory, filename)
-            img = image.load_img(img_path, target_size=(112, 112))
+            img = image.load_img(img_path, target_size=(224, 224))
             img_array = image.img_to_array(img)
             img_array = np.expand_dims(img_array, axis=0)
             img_array = preprocess_input(img_array.astype(np.float32))  # Use Xception preprocessing
