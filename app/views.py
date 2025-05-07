@@ -1,6 +1,8 @@
 
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # <-- Add this line first
 import shutil
+
 import gc
 import json
 import cv2
@@ -22,10 +24,6 @@ from .forms import VideoUploadForm
 from .models import Email
 import requests
 
-
-def clear_gpu_memory():
-    tf.keras.backend.clear_session()
-    gc.collect()
 
 
 
@@ -73,7 +71,6 @@ face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_fronta
 
 
 def FrameCapture(path):
-    clear_gpu_memory()
     output_dir = os.path.join(settings.MEDIA_ROOT, 'frames')
     frame_skip = 20
     min_face_size = 60
@@ -87,7 +84,7 @@ def FrameCapture(path):
 
     frame_count = 0
     saved_faces = 0
-    clear_gpu_memory() 
+
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -167,7 +164,7 @@ def get_confidence_label(confidence, prediction):
 
 
 def evaluate_frames(directory):
-    clear_gpu_memory()
+  
     total_confidence = 0
     num_frames = 0
     results = []
@@ -228,7 +225,7 @@ def evaluate_frames(directory):
 
 
 def upload_video(request):
-    clear_gpu_memory()
+  
 
     media_dir = settings.MEDIA_ROOT
 
@@ -258,7 +255,7 @@ def upload_video(request):
             FrameCapture(video_full_path)
             frames_dir = os.path.join(settings.MEDIA_ROOT, 'frames')
             results, display_confidence, overall_prediction, real_count, fake_count, overall_label, fake_series, real_series, frame_labels, confidence_series = evaluate_frames(frames_dir)
-            clear_gpu_memory()
+        
             # Convert NumPy types to Python native types
             confidence_series = [float(val) for val in confidence_series]
             real_series = [float(val) for val in real_series]
