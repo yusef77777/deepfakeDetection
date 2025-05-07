@@ -1,0 +1,4 @@
+/media
+/test_dataset
+*.h5
+models/
