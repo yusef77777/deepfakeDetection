@@ -53,16 +53,15 @@ tf.config.optimizer.set_jit(False)
 tf.config.threading.set_intra_op_parallelism_threads(1)
 tf.config.threading.set_inter_op_parallelism_threads(1)
 
-# Limit TensorFlow memory growth
-gpus = tf.config.experimental.list_physical_devices('GPU')
-for gpu in gpus:
-    tf.config.experimental.set_memory_growth(gpu, True)
-
-# Set TensorFlow to use a fixed memory limit (in MB) - adjust this based on Railway's limits
-tf.config.set_logical_device_configuration(
-    tf.config.list_physical_devices('CPU')[0],
-    [tf.config.LogicalDeviceConfiguration(memory_limit=512)]
-)
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    try:
+        tf.config.experimental.set_virtual_device_configuration(
+            gpus[0],
+            [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=1024)]
+        )
+    except RuntimeError as e:
+        print(e)
 
 from tensorflow.keras.preprocessing import image
 from tensorflow.keras.applications.xception import preprocess_input
