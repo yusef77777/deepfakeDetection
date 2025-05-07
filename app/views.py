@@ -86,9 +86,9 @@ model = None
 has_warned = False  # Flag to track if we've shown model loading warning
 
 # Railway-friendly constants
-MAX_FRAMES_TO_PROCESS = 10  # Limit total processed frames
-MAX_FACES_TO_EXTRACT = 8   # Limit face extraction
-FRAME_SKIP_RATE = 45        # Skip more frames to reduce processing
+MAX_FRAMES_TO_PROCESS = 20  # Limit total processed frames
+MAX_FACES_TO_EXTRACT = 5   # Limit face extraction
+FRAME_SKIP_RATE = 20        # Skip more frames to reduce processing
 
 def initialize_model():
     """Download and load the model if needed"""
@@ -163,7 +163,7 @@ def check_faces_in_video(video_path):
     # Process frames at intervals to speed up checking
     frame_skip = FRAME_SKIP_RATE
     frame_count = 0
-    max_frames_to_check = 100  # Limit how many frames we check
+    max_frames_to_check = 30  # Limit how many frames we check
     
     frames_checked = 0
     
