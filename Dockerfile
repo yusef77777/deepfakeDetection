@@ -1,4 +1,4 @@
-FROM python:3.9-slim
+FROM python:3.9.19
 
 # Install system dependencies (required for OpenCV)
 RUN apt-get update && apt-get install -y \
