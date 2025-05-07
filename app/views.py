@@ -31,17 +31,28 @@ clear_gpu_memory()
 
 
 
-from huggingface_hub import hf_hub_download
+import os
+import requests
 import tensorflow as tf
 
-# Define the model URL from Hugging Face
-model_url = 'https://huggingface.co/abdulrehman77/deepfakedetection/resolve/main/XSoftmax-%201st%20high%20P.h5'
+# Define the URL where the model is hosted on Hugging Face
+model_url = 'https://huggingface.co/abdulrehman77/deepfakedetection/resolve/main/XSoftmax-%201st%20high%20P.h5'  # Correct URL
 
-# Download the model
-model_path = hf_hub_download(repo_id="abdulrehman77/deepfakedetection", filename="XSoftmax-1st-highP.h5")
+# Define the path where you want to store the model temporarily
+model_path = '/tmp/XSoftmax-1st-highP.h5'  # Temporary storage path for the model
 
-# Load the model
+# Download the model from the URL if it doesn't already exist locally
+if not os.path.exists(model_path):
+    print("Downloading the model...")
+    response = requests.get(model_url)
+    with open(model_path, 'wb') as f:
+        f.write(response.content)
+    print("Model downloaded successfully!")
+
+# Load the model once when the server starts
+print("Loading the model...")
 model = tf.keras.models.load_model(model_path, compile=False)
+print("Model loaded successfully!")
 
 
 
