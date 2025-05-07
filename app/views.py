@@ -1,15 +1,4 @@
 import os
-
-# More aggressive GPU disabling - must be done before importing TensorFlow
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
-os.environ['OMP_NUM_THREADS'] = '1'
-os.environ['OPENBLAS_NUM_THREADS'] = '1'
-os.environ['MKL_NUM_THREADS'] = '1'
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["TF_XLA_FLAGS"] = "--tf_xla_enable_xla_devices=false"
-os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "false"
 import gc
 import json
 import cv2
@@ -19,25 +8,61 @@ import requests
 from PIL import Image
 import imagehash
 
+# The most aggressive GPU disabling possible - must be before ANY TensorFlow imports
+# This completely prevents TensorFlow from seeing or trying to use any GPUs
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # Suppress TF logging
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["TF_GPU_THREAD_MODE"] = "gpu_private"
+os.environ["TF_GPU_ALLOCATOR"] = "null"
+os.environ["TF_XLA_FLAGS"] = "--tf_xla_cpu_global_jit"
+os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "false"
 
-# Now import TensorFlow after environment variables are set
+# Railway-specific memory limits
+os.environ["MALLOC_ARENA_MAX"] = "2"  # Limit memory arenas
+
+# Now import TensorFlow with a modified import system that ignores GPU packages
+import sys
+original_import = __import__
+
+def import_hook(name, *args, **kwargs):
+    if name.startswith('tensorflow.python.eager.') and 'gpu' in name:
+        # Skip importing GPU-related modules
+        return sys.modules.get(name, None)
+    return original_import(name, *args, **kwargs)
+
+sys.meta_path = [
+    importer for importer in sys.meta_path
+    if not hasattr(importer, 'find_spec') or 'tensorflow.python.eager.memory_tests.ops_test' not in str(importer.find_spec)
+]
+
+# Now safe to import TensorFlow
 import tensorflow as tf
 
-# Make absolutely sure no GPU is used
-physical_devices = tf.config.list_physical_devices('GPU')
-if len(physical_devices) > 0:
-    try:
-        # Disable all GPUs
-        for device in physical_devices:
-            tf.config.set_visible_devices([], 'GPU')
-            print(f"Disabled GPU: {device}")
-    except RuntimeError as e:
-        print(f"Error disabling GPU: {e}")
+# Explicitly configure TF to use CPU only
+tf.config.set_visible_devices([], 'GPU')
 
-# Further CPU configuration
-tf.config.threading.set_intra_op_parallelism_threads(2)
-tf.config.threading.set_inter_op_parallelism_threads(2)
-tf.config.set_soft_device_placement(True)
+# Disable JIT compilation which might try to use GPU
+tf.config.optimizer.set_jit(False)
+
+# Further restrict TF to use minimal resources
+tf.config.threading.set_intra_op_parallelism_threads(1)
+tf.config.threading.set_inter_op_parallelism_threads(1)
+
+# Limit TensorFlow memory growth
+gpus = tf.config.experimental.list_physical_devices('GPU')
+for gpu in gpus:
+    tf.config.experimental.set_memory_growth(gpu, True)
+
+# Set TensorFlow to use a fixed memory limit (in MB) - adjust this based on Railway's limits
+tf.config.set_logical_device_configuration(
+    tf.config.list_physical_devices('CPU')[0],
+    [tf.config.LogicalDeviceConfiguration(memory_limit=512)]
+)
 
 from tensorflow.keras.preprocessing import image
 from tensorflow.keras.applications.xception import preprocess_input
@@ -59,10 +84,24 @@ FACE_CASCADE = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_fronta
 
 # Initialize model globally
 model = None
+has_warned = False  # Flag to track if we've shown model loading warning
+
+# Railway-friendly constants
+MAX_FRAMES_TO_PROCESS = 10  # Limit total processed frames
+MAX_FACES_TO_EXTRACT = 8   # Limit face extraction
+FRAME_SKIP_RATE = 45        # Skip more frames to reduce processing
 
 def initialize_model():
     """Download and load the model if needed"""
-    global model
+    global model, has_warned
+    
+    # Show warning only once
+    if not has_warned:
+        print("===============================================")
+        print("IMPORTANT: Loading model in CPU-only mode")
+        print("Any GPU-related warnings should be ignored")
+        print("===============================================")
+        has_warned = True
     
     # Download the model if it doesn't exist
     if not os.path.exists(MODEL_PATH):
@@ -72,18 +111,48 @@ def initialize_model():
             f.write(response.content)
         print("Model downloaded successfully!")
     
-    # Load the model
+    # Load the model with memory optimization
     if model is None:
         print("Loading the model...")
-        # Force CPU usage with a custom device scope
-        with tf.device('/CPU:0'):
-            model = tf.keras.models.load_model(MODEL_PATH, compile=False)
-        print("Model loaded successfully!")
+        try:
+            # The most explicit way to force CPU usage
+            with tf.device('/CPU:0'):
+                # Load with minimal TF options
+                model = tf.keras.models.load_model(
+                    MODEL_PATH, 
+                    compile=False,
+                    options=tf.saved_model.LoadOptions(
+                        experimental_io_device='/job:localhost'
+                    )
+                )
+            print("Model loaded successfully in CPU-only mode!")
+        except Exception as e:
+            print(f"Error loading model: {e}")
+            # Try again with memory optimization
+            clear_resources()
+            with tf.device('/CPU:0'):
+                model = tf.keras.models.load_model(
+                    MODEL_PATH,
+                    compile=False
+                )
+            print("Model loaded with fallback method!")
 
 def clear_resources():
     """Clear TensorFlow session to free memory"""
-    tf.keras.backend.clear_session()
     gc.collect()
+    
+    # Additional memory cleanup
+    import ctypes
+    if hasattr(ctypes, 'windll'):  # Windows-specific
+        try:
+            ctypes.windll.kernel32.SetProcessWorkingSetSize(-1, -1)
+        except:
+            pass
+
+
+@tf.function
+def predict_image(img_array):
+    return model(img_array, training=False)
 
 def check_faces_in_video(video_path):
     """Check if there are any faces in the video"""
@@ -93,10 +162,13 @@ def check_faces_in_video(video_path):
         return False
 
     # Process frames at intervals to speed up checking
-    frame_skip = 30
+    frame_skip = FRAME_SKIP_RATE
     frame_count = 0
+    max_frames_to_check = 100  # Limit how many frames we check
     
-    while True:
+    frames_checked = 0
+    
+    while frames_checked < max_frames_to_check:
         ret, frame = cap.read()
         if not ret:
             break  # End of video
@@ -105,6 +177,8 @@ def check_faces_in_video(video_path):
         if frame_count % frame_skip == 0:
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             faces = FACE_CASCADE.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=6, minSize=(60, 60))
+            
+            frames_checked += 1
             
             if len(faces) > 0:  # If faces are detected
                 cap.release()
@@ -118,7 +192,7 @@ def check_faces_in_video(video_path):
 def capture_video_frames(path):
     """Extract frames with faces from video"""
     output_dir = os.path.join(settings.MEDIA_ROOT, 'frames')
-    frame_skip = 20
+    frame_skip = FRAME_SKIP_RATE  # Increased skip rate to reduce processing
     min_face_size = 60
 
     cap = cv2.VideoCapture(path)
@@ -126,26 +200,45 @@ def capture_video_frames(path):
         print("Error: Cannot open video.")
         return
 
+    # Create output directory
     os.makedirs(output_dir, exist_ok=True)
 
+    # Check video properties
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    duration = total_frames / fps if fps > 0 else 0
+    
+    print(f"Video info: {total_frames} frames, {fps:.2f} FPS, {duration:.2f} seconds")
+    
+    # Maximum faces to extract (limit processing for Railway)
+    max_faces = MAX_FACES_TO_EXTRACT
+    
     frame_count = 0
     saved_faces = 0
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     
-    # Adaptive frame skip rate based on video length
+    print("Extracting faces from video...")
+    
+    # For long videos, increase skip rate further
     if total_frames > 1000:
-        frame_skip = 30
-    elif total_frames > 500:
-        frame_skip = 20
-    else:
-        frame_skip = 10
-
-    while True:
+        frame_skip = 60
+    
+    while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
 
         if frame_count % frame_skip == 0:
+            # Resize frame to reduce memory usage
+            height, width = frame.shape[:2]
+            if width > 640:
+                scale = 640 / width
+                frame = cv2.resize(frame, (int(width * scale), int(height * scale)))
+                
+            # Skip frames that are too dark overall
+            if frame.mean() < 30:  # Skip very dark frames
+                frame_count += 1
+                continue
+                
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             faces = FACE_CASCADE.detectMultiScale(
                 gray,
@@ -155,28 +248,44 @@ def capture_video_frames(path):
             )
 
             for i, (x, y, w, h) in enumerate(faces):
-                # Filter faces by aspect ratio and brightness
+                # Skip faces with unusual aspect ratios
                 aspect_ratio = w / float(h)
                 if not (0.75 <= aspect_ratio <= 1.33):
                     continue
 
+                # Extract and check face
                 face = frame[y:y+h, x:x+w]
+                
+                # Skip low brightness faces
                 brightness = face.mean()
                 if brightness < 40:
                     continue
+                    
+                # Skip small faces
+                if w < min_face_size or h < min_face_size:
+                    continue
 
+                # Save the face
                 filename = os.path.join(output_dir, f"face_{frame_count}_{i}.jpg")
                 cv2.imwrite(filename, face)
                 saved_faces += 1
                 
-                # Limit number of saved faces to prevent excessive processing
-                if saved_faces >= 30:
+                # Progress indicator
+                if saved_faces % 5 == 0:
+                    print(f"Saved {saved_faces} faces...", end="\r")
+                
+                # Limit number of saved faces
+                if saved_faces >= max_faces:
                     cap.release()
-                    print(f"\nDone: {saved_faces} face crops saved (limit reached).")
+                    print(f"\nReached limit: {saved_faces} face crops saved.")
                     remove_non_face_and_duplicate_frames(output_dir)
                     return
 
         frame_count += 1
+        
+        # Safety limit to prevent memory issues with very long videos
+        if frame_count > 5000:
+            break
 
     cap.release()
     print(f"\nDone: {saved_faces} face crops saved.")
@@ -231,49 +340,57 @@ def evaluate_frames(directory):
     real_count = 0
     confidence_series = []
     
-    # Process all images in batches for efficiency
-    image_paths = []
-    filenames = []
+    # Get all image paths and limit the number to prevent memory issues
+    all_files = sorted([f for f in os.listdir(directory) if f.endswith((".jpg", ".png"))])
     
-    for filename in sorted(os.listdir(directory)):
-        if filename.endswith((".jpg", ".png")):
-            img_path = os.path.join(directory, filename)
-            image_paths.append(img_path)
-            filenames.append(filename)
+    # If we have too many frames, select evenly distributed frames
+    if len(all_files) > MAX_FRAMES_TO_PROCESS:
+        # Select evenly distributed frames
+        step = max(1, len(all_files) // MAX_FRAMES_TO_PROCESS)
+        selected_files = [all_files[i] for i in range(0, len(all_files), step)][:MAX_FRAMES_TO_PROCESS]
+    else:
+        selected_files = all_files
+    
+    image_paths = [os.path.join(directory, f) for f in selected_files]
+    filenames = selected_files
     
     # If no frames found
     if not image_paths:
         return [], 0, "No frames found.", 0, 0, "N/A", [], [], [], []
     
-    # Reduce batch size to prevent memory issues
-    batch_size = 4  # Decreased from 8 to reduce memory usage
-    for i in range(0, len(image_paths), batch_size):
-        batch_paths = image_paths[i:i+batch_size]
-        batch_names = filenames[i:i+batch_size]
-        batch_arrays = []
-        
-        for img_path in batch_paths:
+    # Process one image at a time to minimize memory usage
+    total_images = len(image_paths)
+    print(f"\nProcessing {total_images} images:")
+    
+    for i, (img_path, filename) in enumerate(zip(image_paths, filenames)):
+        try:
+            # Clear previous tensors to free memory
+            
+
+            gc.collect()
+            
+            # Print progress
+            progress = ((i+1) / total_images) * 100
+            print(f"Progress: {progress:.1f}% ({i+1}/{total_images})", end="\r")
+            
+            # Load and preprocess the image
             img = image.load_img(img_path, target_size=(224, 224))
             img_array = image.img_to_array(img)
             img_array = np.expand_dims(img_array, axis=0)
             img_array = preprocess_input(img_array.astype(np.float32))
-            batch_arrays.append(img_array[0])
-        
-        # Stack arrays for batch prediction
-        batch_input = np.stack(batch_arrays)
-        
-        # Force CPU prediction with smaller memory footprint
-        with tf.device('/CPU:0'):
-            batch_predictions = model.predict(batch_input, verbose=0)
-        
-        for j, (filename, prediction) in enumerate(zip(batch_names, batch_predictions)):
+            
+            # Force CPU prediction
+            with tf.device('/CPU:0'):
+                prediction = predict_image(img_array)[0].numpy()
+
+            
             confidence = float(prediction[1])
             confidence_series.append(round(confidence, 4))
             total_confidence += confidence
             num_frames += 1
             
             # Label for each frame
-            frame_labels.append(f"Frame {i+j+1}")
+            frame_labels.append(f"Frame {i+1}")
             
             if confidence >= 0.5:
                 results.append((filename, "Fake", confidence))
@@ -285,6 +402,13 @@ def evaluate_frames(directory):
                 real_count += 1
                 fake_series.append(0)
                 real_series.append(1)
+                
+        except Exception as e:
+            print(f"\nError processing image {img_path}: {e}")
+            # Continue with next image
+            continue
+    
+    print("\nProcessing complete!                ")
     
     # Calculate overall prediction
     if num_frames > 0:
@@ -340,6 +464,10 @@ def upload_video(request):
             # Proceed with further processing (frame capture, evaluation, etc.)
             capture_video_frames(video_full_path)
             frames_dir = os.path.join(settings.MEDIA_ROOT, 'frames')
+            
+            # Always clear GPU memory before heavy processing
+            clear_resources()
+            
             results, display_confidence, overall_prediction, real_count, fake_count, overall_label, fake_series, real_series, frame_labels, confidence_series = evaluate_frames(frames_dir)
         
             # Convert all series to native Python types
@@ -347,6 +475,13 @@ def upload_video(request):
             real_series = [int(val) for val in real_series]
             fake_series = [int(val) for val in fake_series]
             frame_labels = [str(label) for label in frame_labels]
+            
+            # Delete video file after processing to free space
+            if os.path.exists(video_full_path):
+                try:
+                    os.remove(video_full_path)
+                except:
+                    pass
 
             return render(request, 'results.html', {
                 'results': results,
@@ -382,9 +517,6 @@ def email_submission(request):
             return JsonResponse({'status': 'error', 'message': 'Invalid JSON data'})
     return JsonResponse({'status': 'error', 'message': 'Invalid request'})
 
-
-
-
 @csrf_exempt
 @require_POST
 def submit_feedback(request):
@@ -400,9 +532,3 @@ def submit_feedback(request):
         return JsonResponse({'status': 'success'})
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
-    
-
-
-
-
-    
