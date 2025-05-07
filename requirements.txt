@@ -3,6 +3,7 @@ ImageHash==4.3.2
 numpy==1.26.4
 opencv_contrib_python==4.9.0.80
 opencv_python==4.7.0.72
+opencv-python-headless
 opencv_python_headless==4.9.0.80
 Pillow==11.2.1
 tensorflow==2.10.1
