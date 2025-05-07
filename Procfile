@@ -1,1 +1,1 @@
-web: gunicorn myproject.wsgi
+web: gunicorn deepfake_detector.wsgi
