@@ -66,53 +66,132 @@ def load_model_from_hf():
 
 model = load_model_from_hf()
 
-def check_faces_in_video(video_path):
+
+
+def check_faces_in_video(video_path, cancelled_flag=None):
+    """
+    Checks if there are any faces in the video with cancellation support
+    
+    Args:
+        video_path: Path to video file
+        cancelled_flag: Reference to global cancellation flag
+    """
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
+        print("Error: Cannot open video.")
         return False
 
-    while True:
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    frame_step = max(1, total_frames // 10)  # Check at most 10 frames
+    
+    for i in range(0, total_frames, frame_step):
+        # Check for cancellation
+        if cancelled_flag is not None and cancelled_flag:
+            print("check_faces_in_video: Processing cancelled")
+            cap.release()
+            return False
+            
+        cap.set(cv2.CAP_PROP_POS_FRAMES, i)
         ret, frame = cap.read()
         if not ret:
-            break
+            continue
+            
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray, 1.1, 6, minSize=(60, 60))
+        faces = face_cascade.detectMultiScale(
+            gray,
+            scaleFactor=1.1,
+            minNeighbors=5,
+            minSize=(30, 30)
+        )
+        
         if len(faces) > 0:
             cap.release()
             return True
+            
     cap.release()
     return False
-
-def FrameCapture(path):
-    clear_memory()
+def FrameCapture(path, cancelled_flag=None):
+    """
+    Captures frames from video with cancellation support
+    
+    Args:
+        path: Path to the video file
+        cancelled_flag: Reference to global cancellation flag
+    """
+    clear_gpu_memory()
     output_dir = os.path.join(settings.MEDIA_ROOT, 'frames')
+    frame_skip = 20
+    min_face_size = 60
+
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
-        return
+        print("Error: Cannot open video.")
+        return False
+
     os.makedirs(output_dir, exist_ok=True)
 
     frame_count = 0
     saved_faces = 0
+    clear_gpu_memory() 
+    
     while True:
+        # Check for cancellation flag at the beginning of each loop iteration
+        if cancelled_flag is not None and cancelled_flag:
+            print("FrameCapture: Processing cancelled")
+            cap.release()
+            return False
+            
         ret, frame = cap.read()
         if not ret:
             break
-        if frame_count % 45 == 0:
+
+        if frame_count % frame_skip == 0:
+            # Check cancellation again before expensive face detection
+            if cancelled_flag is not None and cancelled_flag:
+                print("FrameCapture: Processing cancelled during face detection")
+                cap.release()
+                return False
+                
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            faces = face_cascade.detectMultiScale(gray, 1.1, 6, minSize=(60, 60))
+            faces = face_cascade.detectMultiScale(
+                gray,
+                scaleFactor=1.1,
+                minNeighbors=6,
+                minSize=(min_face_size, min_face_size)
+            )
+
             for i, (x, y, w, h) in enumerate(faces):
-                if not (0.75 <= w / float(h) <= 1.33):
+                aspect_ratio = w / float(h)
+                if aspect_ratio < 0.75 or aspect_ratio > 1.33:
                     continue
+
                 face = frame[y:y+h, x:x+w]
-                if face.mean() < 40:
+                brightness = face.mean()
+                if brightness < 40:
                     continue
+
                 filename = os.path.join(output_dir, f"face_{frame_count}_{i}.jpg")
                 cv2.imwrite(filename, face)
+
+                print(f"[✓] Saved {filename}")
                 saved_faces += 1
+
         frame_count += 1
+
     cap.release()
-    clear_memory()
+    print(f"\nDone: {saved_faces} face crops saved.")
+
+    # Check cancellation before post-processing
+    if cancelled_flag is not None and cancelled_flag:
+        print("FrameCapture: Processing cancelled before frame cleanup")
+        return False
+
+    # Optional: Remove non-face and duplicate frames
     remove_non_face_and_duplicate_frames(output_dir)
+    return True  # Successfully completed
+
+
+
 
 def remove_non_face_and_duplicate_frames(directory):
     clear_memory()
@@ -137,51 +216,97 @@ def remove_non_face_and_duplicate_frames(directory):
 def get_confidence_label(confidence, prediction):
     return "Real ✅" if prediction == "Real" else "Fake ❌"
 
-def evaluate_frames(directory):
-    clear_memory()
+
+def evaluate_frames(directory, cancelled_flag=None):
+    """
+    Evaluate frames with cancellation support.
+    
+    Args:
+        directory: Directory containing frames to evaluate
+        cancelled_flag: Global flag to check if processing has been cancelled
+    """
+   
     total_confidence = 0
     num_frames = 0
     results = []
+    fake_series = []
+    real_series = []
+    frame_labels = []
     fake_count = 0
     real_count = 0
-    frame_labels = []
     confidence_series = []
+    
+    # Get all eligible frames in advance
+    frame_files = sorted([f for f in os.listdir(directory) if f.endswith((".jpg", ".png"))])
+    
+    for idx, filename in enumerate(frame_files):
+        # Check for cancellation before processing each frame
+        if cancelled_flag is not None and cancelled_flag:
+            # Return incomplete results if cancelled
+            return [], 0, "Processing cancelled", 0, 0, "N/A", [], [], [], []
+        
+        img_path = os.path.join(directory, filename)
+        img = image.load_img(img_path, target_size=(224, 224))
+        img_array = image.img_to_array(img)
+        img_array = np.expand_dims(img_array, axis=0)
+        img_array = preprocess_input(img_array.astype(np.float32))  # Use Xception preprocessing
 
-    for idx, filename in enumerate(sorted(os.listdir(directory))):
-        if filename.endswith((".jpg", ".png")):
-            img_path = os.path.join(directory, filename)
-            img = image.load_img(img_path, target_size=(224, 224))
-            img_array = image.img_to_array(img)
-            img_array = np.expand_dims(img_array, axis=0)
-            img_array = preprocess_input(img_array.astype(np.float32))
+        prediction = model.predict(img_array, verbose=0)[0]
+        confidence = prediction[1]
+        confidence_series.append(round(confidence, 4))
+        total_confidence += confidence
+        num_frames += 1
 
-            prediction = model.predict(img_array, verbose=0)[0]
-            confidence = prediction[1]
-            confidence_series.append(round(confidence, 4))
-            total_confidence += confidence
-            num_frames += 1
-            frame_labels.append(f"Frame {idx + 1}")
+        # Label for each frame (e.g., "Frame 1", "Frame 2", ...)
+        frame_labels.append(f"Frame {idx + 1}")
 
-            if confidence >= 0.5:
-                results.append((filename, "Fake", confidence))
-                fake_count += 1
-            else:
-                results.append((filename, "Real", confidence))
-                real_count += 1
-
-            del img, img_array, prediction
-            clear_memory()
+        if confidence >= 0.5:
+            results.append((filename, "Fake", confidence))
+            fake_count += 1
+            fake_series.append(1)
+            real_series.append(0)
+        else:
+            results.append((filename, "Real", confidence))
+            real_count += 1
+            fake_series.append(0)
+            real_series.append(1)
 
     if num_frames > 0:
-        avg_conf = total_confidence / num_frames
-        label = "Fake" if avg_conf >= 0.5 else "Real"
-        return results, round(avg_conf * 100, 2), \
-            "The video is predicted as a deepfake." if label == "Fake" else "The video is predicted as real.", \
-            real_count, fake_count, get_confidence_label(avg_conf, label), frame_labels, confidence_series
+        average_confidence = total_confidence / num_frames
+        display_confidence = round(average_confidence * 100, 2)
+        prediction_type = "Fake" if average_confidence >= 0.5 else "Real"
+        overall_prediction = "The video is predicted as a deepfake." if prediction_type == "Fake" else "The video is predicted as real."
+        overall_label = get_confidence_label(average_confidence, prediction_type)
     else:
-        return [], 0, "No frames found.", 0, 0, "N/A", [], []
+        average_confidence = 0
+        display_confidence = 0
+        overall_prediction = "No frames found."
+        overall_label = "N/A"
+
+    return results, display_confidence, overall_prediction, real_count, fake_count, overall_label, fake_series, real_series, frame_labels, confidence_series
+
+# Global flag to track cancellation
+processing_cancelled = False
+
+def cancel_processing(request):
+    global processing_cancelled
+    if request.method == 'POST':
+        processing_cancelled = True
+        clear_gpu_memory()  # Free GPU memory immediately when cancelled
+        return JsonResponse({'status': 'cancelled'})
+    elif request.method == 'GET':
+        # Also allow GET for easier debugging
+        processing_cancelled = True
+        clear_gpu_memory()
+        return JsonResponse({'status': 'cancelled'})
+    return JsonResponse({'status': 'error'}, status=400)
+
 
 def upload_video(request):
+    global processing_cancelled
+    processing_cancelled = False  # Reset flag on new upload
+  
+
     media_dir = settings.MEDIA_ROOT
     if os.path.exists(media_dir):
         shutil.rmtree(media_dir)
@@ -190,60 +315,132 @@ def upload_video(request):
     if request.method == 'POST':
         form = VideoUploadForm(request.POST, request.FILES)
         if form.is_valid():
-            video = form.cleaned_data['video']
-            fs = FileSystemStorage()
-            video_path = fs.save(video.name, video)
-            full_path = os.path.join(settings.MEDIA_ROOT, video_path)
+            try:
+                video = form.cleaned_data['video']
+                fs = FileSystemStorage()
+                video_path = fs.save(video.name, video)
+                video_full_path = os.path.join(settings.MEDIA_ROOT, video_path)
 
-            if not check_faces_in_video(full_path):
-                return render(request, 'landing_page.html', {
-                    'form': form,
-                    'error_message': 'No faces detected in the video.'
+                # Check for cancellation before each major step
+                if processing_cancelled:
+                    
+                    print("Processing cancelled after initial upload")
+                    return JsonResponse({'status': 'cancelled', 'message': 'Processing cancelled after upload'}, status=200)
+
+                faces_detected = check_faces_in_video(video_full_path)
+                if not faces_detected:
+            # Return JSON response if no faces detected
+                    return JsonResponse({'status': 'error','message': 'No faces detected' })
+                
+                # Check cancellation again
+                if processing_cancelled:
+                    
+                    print("Processing cancelled after face detection")
+                    return JsonResponse({'status': 'cancelled', 'message': 'Processing cancelled after face detection'}, status=200)
+
+                # Pass cancellation flag to FrameCapture
+                frame_success = FrameCapture(video_full_path, processing_cancelled)
+                
+                if not frame_success or processing_cancelled:
+                  
+                    print("Processing cancelled during frame extraction")
+                    return JsonResponse({'status': 'cancelled', 'message': 'Processing cancelled during frame extraction'}, status=200)
+                
+                frames_dir = os.path.join(settings.MEDIA_ROOT, 'frames')
+                
+                # Make sure there are frames to process
+                frame_files = os.listdir(frames_dir)
+                if not frame_files or not [f for f in frame_files if f.endswith(('.jpg', '.png'))]:
+                    return render(request, 'landing_page.html', 
+                                 {'form': form, 'error_message': 'No valid frames could be extracted from the video.'})
+
+                # Pass global cancellation flag to evaluate_frames
+                results, display_confidence, overall_prediction, real_count, fake_count, overall_label, fake_series, real_series, frame_labels, confidence_series = evaluate_frames(frames_dir, processing_cancelled)
+
+                if processing_cancelled:
+                   
+                    print("Processing cancelled during frame evaluation")
+                    return JsonResponse({'status': 'cancelled', 'message': 'Processing cancelled during frame evaluation'}, status=200)
+
+               
+                
+                # Safely convert values to ensure they're JSON serializable
+                try:
+                    confidence_series = [float(val) for val in confidence_series]
+                    real_series = [float(val) for val in real_series]
+                    fake_series = [float(val) for val in fake_series]
+                    frame_labels = [str(label) for label in frame_labels]
+                except Exception as e:
+                    # Handle any conversion errors
+                    print(f"Error converting data: {str(e)}")
+                    confidence_series = []
+                    real_series = []
+                    fake_series = []
+                    frame_labels = []
+
+                return render(request, 'results.html', {
+                    'results': results,
+                    'average_confidence': display_confidence,
+                    'overall_prediction': overall_prediction,
+                    'real_count': real_count,
+                    'fake_count': fake_count,
+                    'overall_label': overall_label,
+                    'confidence_series': json.dumps(confidence_series),
+                    'real_series': json.dumps(real_series),
+                    'fake_series': json.dumps(fake_series),
+                    'frame_labels': json.dumps(frame_labels),
                 })
-
-            FrameCapture(full_path)
-            frames_dir = os.path.join(settings.MEDIA_ROOT, 'frames')
-            results, avg_conf, prediction_text, real_count, fake_count, label, frame_labels, conf_series = evaluate_frames(frames_dir)
-
-            return render(request, 'results.html', {
-                'results': results,
-                'average_confidence': avg_conf,
-                'overall_prediction': prediction_text,
-                'real_count': real_count,
-                'fake_count': fake_count,
-                'overall_label': label,
-                'confidence_series': json.dumps([float(x) for x in conf_series]),
-                'frame_labels': json.dumps(frame_labels),
-            })
+            except Exception as e:
+                # Handle any unexpected errors during processing
+                
+                print(f"Error during processing: {str(e)}")
+                return render(request, 'landing_page.html', {
+                    'form': form, 
+                    'error_message': f'An error occurred during processing: {str(e)}'
+                })
+        else:
+            # Form validation failed
+            return render(request, 'landing_page.html', {'form': form})
     else:
         form = VideoUploadForm()
     return render(request, 'landing_page.html', {'form': form})
 
-@csrf_exempt
+@csrf_exempt  # Disable CSRF protection for this view temporarily
 def email_submission(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
             email = data.get('email')
+
             if email:
+                # Save the email to the database
                 Email.objects.create(email=email)
                 return JsonResponse({'status': 'success'})
-            return JsonResponse({'status': 'error', 'message': 'No email provided'})
+            else:
+                return JsonResponse({'status': 'error', 'message': 'No email provided'})
         except json.JSONDecodeError:
-            return JsonResponse({'status': 'error', 'message': 'Invalid JSON'})
+            return JsonResponse({'status': 'error', 'message': 'Invalid JSON data'})
     return JsonResponse({'status': 'error', 'message': 'Invalid request'})
+
 
 @csrf_exempt
 @require_POST
 def submit_feedback(request):
     try:
         data = json.loads(request.body)
-        Feedback.objects.create(
+        feedback = Feedback(
             rating=data.get('rating'),
             comment=data.get('comment', ''),
             page_url=data.get('page_url', ''),
             ip_address=request.META.get('REMOTE_ADDR')
         )
+        feedback.save()
         return JsonResponse({'status': 'success'})
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+    
+
+
+
+
+    
