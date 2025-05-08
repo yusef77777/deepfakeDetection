@@ -118,7 +118,7 @@ def FrameCapture(path, cancelled_flag=None):
         path: Path to the video file
         cancelled_flag: Reference to global cancellation flag
     """
-    clear_gpu_memory()
+    
     output_dir = os.path.join(settings.MEDIA_ROOT, 'frames')
     frame_skip = 20
     min_face_size = 60
@@ -132,7 +132,7 @@ def FrameCapture(path, cancelled_flag=None):
 
     frame_count = 0
     saved_faces = 0
-    clear_gpu_memory() 
+   
     
     while True:
         # Check for cancellation flag at the beginning of each loop iteration
@@ -292,12 +292,12 @@ def cancel_processing(request):
     global processing_cancelled
     if request.method == 'POST':
         processing_cancelled = True
-        clear_gpu_memory()  # Free GPU memory immediately when cancelled
+        # Free GPU memory immediately when cancelled
         return JsonResponse({'status': 'cancelled'})
     elif request.method == 'GET':
         # Also allow GET for easier debugging
         processing_cancelled = True
-        clear_gpu_memory()
+     
         return JsonResponse({'status': 'cancelled'})
     return JsonResponse({'status': 'error'}, status=400)
 
