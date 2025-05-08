@@ -572,7 +572,10 @@ input[type="file"]::-webkit-file-upload-button:active,
   opacity: 0.9;
 }
 
-
+#uploadStatus.error {
+  color: #d9534f;
+  font-weight: bold;
+}
 
 /* ============================
    Footer
@@ -1095,30 +1098,6 @@ input[type="file"]::-webkit-file-upload-button:active,
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 /* Video Preview */
 #videoContainer {
     max-height: 300px;
@@ -1403,6 +1382,7 @@ input[type="file"]::-webkit-file-upload-button:active,
       <a href="#home" class="w-full text-center py-2 md:py-0 md:mr-5 font-medium hover:text-primary-color transition">Home</a>
       <a href="#about" class="w-full text-center py-2 md:py-0 md:mr-5 font-medium hover:text-primary-color transition">About</a>
       <a href="#demo" class="w-full text-center py-2 md:py-0 md:mr-5 font-medium hover:text-primary-color transition">Demo</a>
+      <a href="#Subscribe" class="w-full text-center py-2 md:py-0 md:mr-5 font-medium hover:text-primary-color transition">Subscribe</a>
 
     </nav>
   </div>
@@ -1470,14 +1450,11 @@ input[type="file"]::-webkit-file-upload-button:active,
   <section class="custom-about-section">
     <div class="custom-about-text slide-in">
         <h1>About Us</h1>
-        <p style="font-size: 28px;">At DeepDeception, we provide AI-powered deepfake detection to safeguard digital integrity. Our platform uses deep learning and computer vision to detect manipulated media, helping individuals and organizations combat misinformation.</p>
-        
-        <p class="custom-mission-text">We strive to create a safer digital world by delivering accurate, accessible, and AI-driven deepfake detection. Through innovation and user-focused design, we empower users to verify content authenticity with ease.</p>
-        
+        <p style="font-size: 25px;">At DeepDeception, we provide AI-powered deepfake detection to safeguard digital integrity. Our platform uses deep learning and computer vision to detect manipulated media, helping individuals and organizations combat misinformation. We strive to create a safer digital world by delivering accurate, accessible, and AI-driven deepfake detection. Through innovation and user-focused design, we empower users to verify content authenticity with ease.</p>
         
     </div>
     <div class="custom-about-image slide-in">
-        <img src="https://encrypted-tbn2.gstatic.com/images?q=tbn:ANd9GcQ5UHR5FpT7lJ2tebq_NVCrK2js7X7xhcnhfmQOxwGpXRXvsPRc" alt="About Us Image">
+        <img src= "{% static 'images/laptop.jpg' %}"  alt="About Us Image">
     </div>
   </section>
   
@@ -1566,7 +1543,7 @@ input[type="file"]::-webkit-file-upload-button:active,
                     <h3>Maheen Shaikh</h3>
                     <div class="custom-social-links">
                         <!-- LinkedIn Link with Clipper Emoji -->
-                        <a href="https://www.linkedin.com/in/abdulrehman-qureshi-9b738a209/" target="_blank">🔗 LinkedIn</a>
+                        <a href="https://www.linkedin.com/in/maheen-shaikh-0571b51b0/" target="_blank">🔗 LinkedIn</a>
                     </div>
                 </div>
             </div>
@@ -1747,39 +1724,88 @@ input[type="file"]::-webkit-file-upload-button:active,
               return emailPattern.test(email);
           }
       </script>
-  <script>
-    document.addEventListener('DOMContentLoaded', function () {
+
+
+<script>document.addEventListener('DOMContentLoaded', function () {
   const uploadForm = document.querySelector('form');
   const uploadBtn = document.getElementById('submitUploadBtn');
   const statusText = document.getElementById('uploadStatus');
 
   const messages = [
+    "Uploading video",
+    "Uploading video.",
+    "Uploading video..",
     "Uploading video...",
-    "Uploading video...",
-    "Uploading video...",
-    "Extracting frames from video...",
-    "Extracting frames from video...",
+    "Extracting frames from video.",
+    "Extracting frames from video..",
     "Running initial preprocessing...",
-    "Performing face detection...",
-    "Extracting facial features...",
+    "Performing face detection",
+    "Extracting facial features",
+    "Running deepfake model.",
+    "Running deepfake model..",
     "Running deepfake model...",
-    "Analyzing frame-by-frame...",
-    "Aggregating confidence scores...",
-    "Finalizing result..."
+    "Analyzing frame-by-frame",
+    "Aggregating confidence scores",
+    "Finalizing result.",
+    "Finalizing result..",
+    "Finalizing result...",
+  
   ];
 
   let interval;
   let index = 0;
   let isProcessing = false;
+  let formSubmitted = false;
+  
+  // Function to send cancellation request
+  function sendCancellationRequest() {
+    // Only send cancellation if processing but form hasn't fully submitted
+    if (isProcessing && !formSubmitted) {
+      fetch('/cancel_processing/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken'),
+        },
+        body: JSON.stringify({ cancel: true }),
+        // Use keepalive to ensure request completes even if page is unloading
+        keepalive: true
+      }).catch(error => {
+        // Errors are expected during page unload, no need to log
+      });
+    }
+  }
+
+  // Send cancellation signal if page is reloaded/closed
+  // But only after form has been submitted and before results are returned
+  window.addEventListener('beforeunload', function (e) {
+    if (isProcessing && !formSubmitted) {
+      sendCancellationRequest();
+      // Modern browsers require returnValue to be set for confirmation dialog
+      e.returnValue = 'Processing will be cancelled. Are you sure?';
+      return e.returnValue;
+    }
+  });
 
   if (uploadForm && uploadBtn && statusText) {
+    // Track form submission with AJAX to prevent the default form behavior
     uploadForm.addEventListener('submit', function (e) {
-      if (isProcessing) return; // prevent re-submitting
+      if (isProcessing) return;
+      
+      e.preventDefault(); // Prevent the default form submission
+      
       isProcessing = true;
-
+      uploadBtn.disabled = true;
       uploadBtn.classList.add('processing');
       statusText.innerText = messages[index];
+      
+      // Show cancel button if it exists
+      const cancelBtn = document.getElementById('cancelProcessingBtn');
+      if (cancelBtn) {
+        cancelBtn.style.display = 'inline-block';
+      }
 
+      // Start the status message interval
       interval = setInterval(() => {
         index++;
         if (index < messages.length) {
@@ -1788,12 +1814,142 @@ input[type="file"]::-webkit-file-upload-button:active,
           clearInterval(interval);
         }
       }, 1800);
+      
+      // Use FormData to collect form data
+      const formData = new FormData(uploadForm);
+      
+      // Submit form data via fetch
+      fetch(uploadForm.action, {
+        method: 'POST',
+        body: formData,
+        credentials: 'same-origin'
+      })
+      .then(response => {
+        formSubmitted = true;
+        if (!response.ok) {
+          throw new Error('Network response was not ok');
+        }
+        return response.text();
+      })
+      .then(responseText => {
+        // Check if response is JSON (cancelled or error) or HTML (results)
+        try {
+          // Try to parse as JSON first (for cancellation responses or error messages)
+          const jsonResponse = JSON.parse(responseText);
+          
+          if (jsonResponse.status === 'cancelled') {
+            console.log("Processing was cancelled:", jsonResponse.message);
+            // Update UI to reflect cancellation
+            clearInterval(interval);
+            statusText.innerText = "Processing was cancelled.";
+            uploadBtn.disabled = false;
+            uploadBtn.classList.remove('processing');
+            if (cancelBtn) {
+              cancelBtn.style.display = 'none';
+            }
+            isProcessing = false;
+          } 
+          else if (jsonResponse.status === 'error' && jsonResponse.message === 'No faces detected') {
+            // Handle the no face detected error
+            clearInterval(interval);
+            statusText.innerText = "No faces detected in the video.";
+    
+            uploadBtn.disabled = false;
+            uploadBtn.classList.remove('processing');
+            if (cancelBtn) {
+              cancelBtn.style.display = 'none';
+            }
+            isProcessing = false;
+          }
+        } catch (e) {
+          // Not JSON, treat as HTML response
+          document.open();
+          document.write(responseText);
+          document.close();
+          isProcessing = false;
+        }
+      })
+      .catch(error => {
+        console.error('Submission error:', error);
+        isProcessing = false;
+        uploadBtn.disabled = false;
+        uploadBtn.classList.remove('processing');
+        statusText.innerText = "An error occurred. Please try again.";
+        if (cancelBtn) {
+          cancelBtn.style.display = 'none';
+        }
+        clearInterval(interval);
+      });
     });
   }
+  
+  // Add a cancel button if not already present
+  const addCancelButton = () => {
+    if (!document.getElementById('cancelProcessingBtn') && uploadBtn) {
+      const cancelBtn = document.createElement('button');
+      cancelBtn.id = 'cancelProcessingBtn';
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'btn btn-danger ml-2';
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.style.display = 'none';
+      
+      uploadBtn.parentNode.insertBefore(cancelBtn, uploadBtn.nextSibling);
+      
+      cancelBtn.addEventListener('click', function() {
+        sendCancellationRequest();
+        statusText.innerText = "Cancelling processing...";
+        
+        // Wait a moment then check status
+        setTimeout(() => {
+          fetch('/cancel_processing/', {
+            method: 'GET',  // Use GET to check status
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': getCookie('csrftoken'),
+            }
+          })
+          .then(response => response.json())
+          .then(data => {
+            statusText.innerText = "Processing cancelled.";
+            cancelBtn.style.display = 'none';
+            uploadBtn.disabled = false;
+            uploadBtn.classList.remove('processing');
+            clearInterval(interval);
+            isProcessing = false;
+          })
+          .catch(error => {
+            console.error('Error checking cancel status:', error);
+            statusText.innerText = "Processing cancelled.";
+            cancelBtn.style.display = 'none';
+            uploadBtn.disabled = false;
+            uploadBtn.classList.remove('processing');
+            clearInterval(interval);
+            isProcessing = false;
+          });
+        }, 500);
+      });
+    }
+  };
+  
+  addCancelButton();
 });
 
-  </script>
-  
+// Helper function to get CSRF token
+function getCookie(name) {
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';');
+    for (let i = 0; i < cookies.length; i++) {
+      const cookie = cookies[i].trim();
+      if (cookie.substring(0, name.length + 1) === (name + '=')) {
+        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}</script>
+
   <script>
     // Combined Upload Modal Script
     document.addEventListener('DOMContentLoaded', function() {
