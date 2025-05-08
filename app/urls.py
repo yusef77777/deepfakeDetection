@@ -6,8 +6,10 @@ from . import views
 
 urlpatterns = [  # ← now this handles /
     path('', views.upload_video, name='upload_video'),
+    path('cancel_processing/', views.cancel_processing, name='cancel_processing'),
     path('api/feedback/', submit_feedback, name='submit_feedback'),
     path('newsletter/submit-email/', views.email_submission, name='submit_email'),
+
  
 
 ]
