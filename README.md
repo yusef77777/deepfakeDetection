@@ -96,7 +96,7 @@ Abdulrehman Qureshi
 GitHub
 AI Researcher | Computer Vision & Web Systems
 
-Maheen Shakoor
+Maheen Sheikh
 GitHub
 Full-stack Developer | AI Enthusiast
 
