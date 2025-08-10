@@ -43,16 +43,27 @@ Developed as part of our Final Year Project at Bahria University.
 ## 📂 Project Structure
 DeepDeception/
 │
+
 ├── model/ # Xception model + inference code
+
 ├── webapp/ # Django project
+
 │ ├── templates/
+
 │ ├── static/
+
 │ ├── views.py
+
 │ ├── urls.py
+
 │ └── models.py # Stores email + feedback
+
 │
+
 ├── media/ # Uploaded videos (temp storage)
+
 ├── requirements.txt
+
 └── README.md
 
 
@@ -96,7 +107,7 @@ Abdulrehman Qureshi
 [crazy-scientistt](https://github.com/crazy-scientistt)
 AI Researcher | Computer Vision & Web Systems
 
-*Maheen Shaikh*
+Maheen Shaikh
 [@maheenshkk](https://github.com/maheenshkk) 
 AI/ML Engineer | Data Analytics | Computer Vision | NLP | Power BI | Python
 
