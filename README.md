@@ -1,7 +1,6 @@
 # DeepDeception 
 
 A Deep Learning-based web application for **deepfake video detection**, powered by the **Xception** model and deployed via **Railway**.  
-Developed as part of our Final Year Project at Bahria University.
 
 ---
 
