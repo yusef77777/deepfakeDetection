@@ -110,13 +110,15 @@ Input: Short video clips (MP4)
 Output: Real / Fake classification with confidence score
 
  Authors
+Maheen Shaikh
+email: maheenshkk@gmail.com 
+[@maheenshkk](https://github.com/maheenshkk)
+AI/ML Engineer | Data Analytics | Computer Vision | NLP | Power BI | Python
+
 Abdulrehman Qureshi
 [crazy-scientistt](https://github.com/crazy-scientistt)
 AI Researcher | Computer Vision & Web Systems
 
-Maheen Shaikh
-[@maheenshkk](https://github.com/maheenshkk) 
-AI/ML Engineer | Data Analytics | Computer Vision | NLP | Power BI | Python
 
 
 
