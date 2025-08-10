@@ -93,12 +93,12 @@ Output: Real / Fake classification with confidence score
 
 🧑‍💻 Authors
 Abdulrehman Qureshi
-GitHub
+[crazy-scientistt](https://github.com/crazy-scientistt)
 AI Researcher | Computer Vision & Web Systems
 
-Maheen Sheikh
-GitHub
-Full-stack Developer | AI Enthusiast
+*Maheen Shaikh*
+[@maheenshkk](https://github.com/maheenshkk) 
+AI/ML Engineer | Data Analytics | Computer Vision | NLP | Power BI | Python
 
 🎓 Academic Info
 Project: Final Year Project – DeepDeception
